@@ -13,13 +13,13 @@ jobs:
       - name: NodeJS Kur
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24' # GitHub'ın istediği en güncel sürüm
           
       - name: Java (Android) Kur
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '17' # Android SDK'nın APK derlemek için istediği modern sürüm
           
       - name: Proje Klasörü ve Capacitor Kurulumu
         run: |
@@ -29,7 +29,6 @@ jobs:
           npm install @capacitor/cli @capacitor/core
           npm install @capacitor/android
           npx cap init MyApp com.test.myapp --web-dir www
-          # Capacitor hata vermesin diye boş bir www klasörü oluşturuyoruz
           mkdir -p www
           echo "<h1>Hazirlaniyor...</h1>" > www/index.html
           npx cap add android
