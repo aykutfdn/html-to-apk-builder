@@ -19,14 +19,13 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17' # Kararlı Java sürümümüz
+          java-version: '17'
           
       - name: Proje Klasörü ve Capacitor Kurulumu
         run: |
           mkdir my-app
           cd my-app
           npm init -y
-          # Sürüm çakışmasını önlemek için Capacitor v5 sürümlerini zorunlu kılıyoruz
           npm install @capacitor/cli@5 @capacitor/core@5
           npm install @capacitor/android@5
           npx cap init MyApp com.test.myapp --web-dir www
@@ -66,7 +65,8 @@ jobs:
           APK_PATH="my-app/android/app/build/outputs/apk/debug/app-debug.apk"
           FILE_NAME="${{ env.JOB_ID }}.apk"
           
-          curl -s -X POST "${{ secrets.SUPABASE_URL }}/storage/v1/object/html_zips/$FILE_NAME" \
+          # Hataları görmek için -s modunu kaldırdık
+          curl -X POST "${{ secrets.SUPABASE_URL }}/storage/v1/object/html_zips/$FILE_NAME" \
             -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
             -H "Content-Type: application/vnd.android.package-archive" \
@@ -74,8 +74,15 @@ jobs:
             
           APK_URL="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/html_zips/$FILE_NAME"
           
-          curl -s -X PATCH "${{ secrets.SUPABASE_URL }}/rest/v1/build_jobs?id=eq.${{ env.JOB_ID }}" \
+          curl -X PATCH "${{ secrets.SUPABASE_URL }}/rest/v1/build_jobs?id=eq.${{ env.JOB_ID }}" \
             -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{\"status\": \"tamamlandi\", \"apk_url\": \"$APK_URL\"}"
+
+      - name: APK'yı GitHub'a Yedekle (Garantili İndirme)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Benim-APK-Dosyam
+          path: my-app/android/app/build/outputs/apk/debug/app-debug.apk
