@@ -1,30 +1,27 @@
 name: Build APK from Supabase
 
 on:
-  workflow_dispatch: # Manuel tetikleme için
+  workflow_dispatch:
   repository_dispatch:
-    types: [build_apk] # Supabase'den gelecek sinyal
+    types: [build_apk]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: NodeJS Kur
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           
-      - name: Java (Android için) Kur
-        uses: actions/setup-java@v3
+      - name: Java (Android) Kur
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
           
-      - name: Android SDK Kur
-        uses: android-actions/setup-android@v2
-          
-      - name: Proje Klasörü Oluştur
+      - name: Proje Klasörü ve Capacitor Kurulumu
         run: |
           mkdir my-app
           cd my-app
@@ -32,28 +29,30 @@ jobs:
           npm install @capacitor/cli @capacitor/core
           npm install @capacitor/android
           npx cap init MyApp com.test.myapp --web-dir www
+          # Capacitor hata vermesin diye boş bir www klasörü oluşturuyoruz
+          mkdir -p www
+          echo "<h1>Hazirlaniyor...</h1>" > www/index.html
           npx cap add android
           
       - name: Supabase'den HTML Kodunu Çek
         run: |
-          # Supabase'den 'bekliyor' olan ilk işi alıyoruz
+          # Supabase'den bekleyen işi çekiyoruz
           RESPONSE=$(curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/build_jobs?status=eq.bekliyor&select=id,html_content&limit=1" -H "apikey: ${{ secrets.SUPABASE_KEY }}" -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}")
           
-          # Eğer gelen yanıt boşsa veya iş yoksa durdur
-          if [ "$RESPONSE" == "[]" ]; then
+          # Hata kontrolü
+          if [ "$RESPONSE" == "[]" ] || [ -z "$RESPONSE" ]; then
             echo "Bekleyen iş bulunamadı!"
-            exit 0
+            exit 1
           fi
           
-          # ID'yi ve HTML içeriğini ayır (Basit metin işleme ile)
+          # Verileri ayır
           JOB_ID=$(echo $RESPONSE | jq -r '.[0].id')
           HTML_CONTENT=$(echo $RESPONSE | jq -r '.[0].html_content')
           
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
           
-          # HTML'i projenin içine yaz
+          # Kodu asıl klasörün içine yazdır
           cd my-app
-          mkdir -p www
           echo "$HTML_CONTENT" > www/index.html
           
       - name: Capacitor ile APK Derle
@@ -62,22 +61,23 @@ jobs:
           cd my-app
           npx cap sync android
           cd android
+          chmod +x ./gradlew
           ./gradlew assembleDebug
           
-      - name: APK'yı Supabase Storage'a Yükle ve Durumu Güncelle
+      - name: APK'yı Supabase'e Yükle ve Durumu Güncelle
         if: env.JOB_ID != ''
         run: |
           APK_PATH="my-app/android/app/build/outputs/apk/debug/app-debug.apk"
           FILE_NAME="${{ env.JOB_ID }}.apk"
           
-          # Storage'a Yükle (html_zips bucket'ını kullandığımızı varsayıyorum)
+          # 1. APK'yı Supabase Storage'a Yükle
           curl -s -X POST "${{ secrets.SUPABASE_URL }}/storage/v1/object/html_zips/$FILE_NAME" \
             -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
             -H "Content-Type: application/vnd.android.package-archive" \
             --data-binary @"$APK_PATH"
             
-          # Veritabanını Güncelle
+          # 2. Veritabanında durumu 'tamamlandi' yap ve APK linkini ekle
           APK_URL="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/html_zips/$FILE_NAME"
           
           curl -s -X PATCH "${{ secrets.SUPABASE_URL }}/rest/v1/build_jobs?id=eq.${{ env.JOB_ID }}" \
